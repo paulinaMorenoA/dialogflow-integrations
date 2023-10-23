@@ -9,15 +9,20 @@
 // const languageCode = 'en'
 // const discordToken = '...'
 
-const express = require("express")
-const server = express()
+const express = require("express");
+const server = express();
 
-const {Client} = require('discord.js');
-const bot = new Client()
-require('discord-buttons')(bot);
+const {Client, GatewayIntentBits} = require('discord.js');
+const bot = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
 
-bot.login(discordToken)
-bot.on('ready', () => {console.log(`Logged in as ${bot.user.tag}!`)})
+bot.login(discordToken);
+bot.on('ready', () => {console.log(`Logged in as ${bot.user.tag}!`)});
 
 const structProtoToJson =
     require('../../botlib/proto_to_json.js').structProtoToJson;
@@ -67,35 +72,36 @@ async function detectIntentResponse(discordRequest) {
 };
 
 async function convertToDiscordMessage(responses) {
-  let replies = [];
+  const exampleEmbed = {
+    color: 0xff00e6,
+    title: 'Shiba Bot',
+    fields: [
+      {
+        name: 'Response',
+        value: 'Some value here',
+      },
+      {
+        name: 'Source',
+        value: 'Some value here',
+      },
+    ],
+  };
 
-  for (let response of responses.queryResult.responseMessages) {
-    let reply;
-
-    switch (true) {
-      case response.hasOwnProperty('text'): {
-        reply = response.text.text.join();
-      } break;
-
-      /**
-       * For information on the layouts for rich messages on Discord visit:
-       * Images and Audio:
-       * https://discord.js.org/#/docs/main/stable/class/TextChannel?scrollTo=send
-       * Buttons:
-       * https://discord.com/developers/docs/interactions/message-components
-       */
-      case response.hasOwnProperty('payload'): {
-        reply = await structProtoToJson(response.payload);
-      } break;
-
-      default:
-    }
-    if (reply) {
-      replies.push(reply);
+  for (const response of responses.queryResult.responseMessages) {
+    if (response.hasOwnProperty('payload')) {
+      const richContent = structProtoToJson(response.payload);
+      if (richContent.richContent && richContent.richContent.length > 0) {
+        const firstElement = richContent.richContent[0][0];
+        if (firstElement && firstElement.actionLink) {
+          exampleEmbed.fields[1].value = firstElement.actionLink;
+        }
+      }
+    } else if (response.hasOwnProperty('text')) {
+      exampleEmbed.fields[0].value = response.text.text.join();
     }
   }
 
-  return replies;
+  return exampleEmbed;
 }
 
 /**
@@ -104,26 +110,26 @@ async function convertToDiscordMessage(responses) {
  * directly ask it a question either through direct message or by mentioning
  * it in their message.
  */
-bot.on('message', async message => {
+bot.on('messageCreate', async function (message) {
+
   if (message.author != bot.user && !message.author.bot &&
       (message.mentions.users.has(bot.user.id) ||
-       message.channel.type == 'dm')) {
+       message.channel.type == 'DM')) {
     const responses = await detectIntentResponse(message);
     var requests = await convertToDiscordMessage(responses);
-        
-    for (req of requests) {
+
       try {
-        await message.channel.send(req);
+        console.log('Request : '+ JSON.stringify(requests));
+        await message.channel.send({ embeds: [requests]});
       } catch (error) {
         console.log(error.data)
       }
-    }
   }
-})
+});
 
 server.listen(process.env.PORT, () => {
   console.log(
-      'Your Dialogflow integration server is listening on port ' +
+      'Woo-hoo ,Your Dialogflow integration server is listening on port ' +
       process.env.PORT);
 })
 
